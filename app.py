@@ -1,12 +1,17 @@
 from langchain_core.messages import AIMessage, HumanMessage
 import os
 import streamlit as st
-from prepare_documents import prepare_docs, chunking, parse_files
+from prepare_documents import prepare_docs, chunking, parse_files, check_parsed_files
 from retrieval import save_to_chroma, retriever_system, query_system
 from configuration import parsed_txt_directory, vectorstore_dir, image_path
 
 # Function to load the vectorstore and prepare the system
 def load():
+
+    # Check if all files are parsed and up to date
+    st.spinner("Checking for new files in the data directory...")
+    check_parsed_files()
+
     # Check if the parsed text directory exists and is populated
     if not os.path.exists(parsed_txt_directory) or len(os.listdir(parsed_txt_directory)) == 0:
         print("Parsed text directory is empty or missing. Parsing files...")
@@ -14,11 +19,12 @@ def load():
 
     # Check if the vectorstore exists, otherwise process embeddings
     if not os.path.exists(vectorstore_dir) or len(os.listdir(vectorstore_dir)) == 0:
-        print("Vectorstore is empty or missing. Processing embeddings...")
-        # Extract documents and create the vectorstore
-        texts, metadatas = prepare_docs()
-        chunks, chunk_metadatas = chunking(texts, metadatas)
-        vectorstore = save_to_chroma(chunks, chunk_metadatas)  # Save the new vectorstore
+        with st.spinner("Creating embeddings"):
+            print("Vectorstore is empty or missing. Processing embeddings...")
+            # Extract documents and create the vectorstore
+            texts, metadatas = prepare_docs()
+            chunks, chunk_metadatas = chunking(texts, metadatas)
+            vectorstore = save_to_chroma(chunks, chunk_metadatas)  # Save the new vectorstore
     else:
         print("Vectorstore exists. Loading it...")
         # Load the existing vectorstore without reprocessing
