@@ -1,39 +1,60 @@
 from langchain_core.messages import AIMessage, HumanMessage
 import os
+import shutil
 import streamlit as st
-from prepare_documents import prepare_docs, chunking, parse_files, check_parsed_files
+from prepare_documents import prepare_docs, chunking, check_parsed_files
 from retrieval import save_to_chroma, retriever_system, query_system
 from configuration import parsed_txt_directory, vectorstore_dir, image_path
 
+col1, mid, col2 = st.columns([1, 0.5, 1])
+with mid:
+    st.image(image_path, width=70)
+st.markdown("<h1 style='text-align: center;'>Contract Query Bot</h1>", unsafe_allow_html=True)
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = [
+        AIMessage(content="Hello, I am a Contract Query bot. How can I help you?"),
+    ]
+
+# Function to create or load the embeddings
+def embedding_func():
+    texts, metadatas = prepare_docs()
+    chunks, chunk_metadatas = chunking(texts, metadatas)
+    vectorstore = save_to_chroma(chunks, chunk_metadatas)
+    return vectorstore
+
 # Function to load the vectorstore and prepare the system
 def load():
-
+    
     # Check if all files are parsed and up to date
-    st.spinner("Checking for new files in the data directory...")
-    check_parsed_files()
+    with st.spinner("Checking for new files in the data directory..."):
+        new_files_found = check_parsed_files()  # Get the flag
 
-    # Check if the parsed text directory exists and is populated
-    if not os.path.exists(parsed_txt_directory) or len(os.listdir(parsed_txt_directory)) == 0:
-        print("Parsed text directory is empty or missing. Parsing files...")
-        parse_files()  # Trigger parsing of PDFs
+     # Case 1: New files found and vectorstore exists
+    if new_files_found and os.path.exists(vectorstore_dir):
+        with st.spinner("New file found .... recreating the vectorstore"):
+            shutil.rmtree(vectorstore_dir)  # Delete the existing vectorstore
+            vectorstore = embedding_func()  
+       
+    # Case 2: New files found and vectorstore does not exist
+    elif new_files_found and not os.path.exists(vectorstore_dir):
+        with st.spinner("Creating embeddings due to new files and missing vectorstore..."):
+            vectorstore = embedding_func()  
+        
+    # Case 3: No new files found and vectorstore exists
+    elif not new_files_found and os.path.exists(vectorstore_dir):
+        with st.spinner("Loading existing vectorstore..."):
+            vectorstore = save_to_chroma([], [])  
 
-    # Check if the vectorstore exists, otherwise process embeddings
-    if not os.path.exists(vectorstore_dir) or len(os.listdir(vectorstore_dir)) == 0:
-        with st.spinner("Creating embeddings"):
-            print("Vectorstore is empty or missing. Processing embeddings...")
-            # Extract documents and create the vectorstore
-            texts, metadatas = prepare_docs()
-            chunks, chunk_metadatas = chunking(texts, metadatas)
-            vectorstore = save_to_chroma(chunks, chunk_metadatas)  # Save the new vectorstore
+    # Case 4: No new files found and vectorstore does not exist
     else:
-        print("Vectorstore exists. Loading it...")
-        # Load the existing vectorstore without reprocessing
-        vectorstore = save_to_chroma([], [])  # Just load it, don't add new data
-
-    # Create the retrieval system based on the loaded vectorstore
+        with st.spinner("Creating embeddings due to missing Vectorstore"):
+            vectorstore = embedding_func()  
+        
     qa_chain = retriever_system(vectorstore)
     return qa_chain
 
+    
 # Initialize the app and load vectorstore once
 if "qa_chain" not in st.session_state:
     print("Initializing vectorstore for the first time...")
@@ -41,21 +62,8 @@ if "qa_chain" not in st.session_state:
 else:
     print("Vectorstore already initialized")
 
-# Streamlit app layout
-col1, mid, col2 = st.columns([1, 0.5, 1])
 
-with mid:
-    st.image(image_path, width=70)
-
-st.markdown("<h1 style='text-align: center;'>Contract Query Bot</h1>", unsafe_allow_html=True)
-
-# Initialize chat history if not already present
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = [
-        AIMessage(content="Hello, I am a Contract Query bot. How can I help you?"),
-    ]
-
-# Display chat history
+# Initialize chat history in session state if not already present
 for message in st.session_state.chat_history:
     if isinstance(message, AIMessage):
         with st.chat_message("AI"):
@@ -63,6 +71,7 @@ for message in st.session_state.chat_history:
     elif isinstance(message, HumanMessage):
         with st.chat_message("Human"):
             st.write(message.content)
+
 
 # Input box for user queries
 if user_input := st.chat_input("Ask a question"):
@@ -77,4 +86,4 @@ if user_input := st.chat_input("Ask a question"):
 
     # Display the AI response
     with st.chat_message("AI"):
-        st.write(response)
+        st.write(response) 
