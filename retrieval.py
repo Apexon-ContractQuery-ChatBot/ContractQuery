@@ -10,6 +10,7 @@ from langchain.prompts import PromptTemplate
 from langchain.retrievers import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors import LLMChainExtractor
 
+
 # Check if vectorstore exists, otherwise create one
 def save_to_chroma(chunks,chunk_metadatas):
     if not os.path.exists(vectorstore_dir) or not os.listdir(vectorstore_dir):
@@ -22,29 +23,30 @@ def save_to_chroma(chunks,chunk_metadatas):
         print("Vector store already exists")
         vectorstore = Chroma(persist_directory=vectorstore_dir, embedding_function=OpenAIEmbeddings(openai_api_key=openai_api_key))
     return vectorstore
-# Create retriever
+
+
+# Complete retriever logic
 def retriever_system(vectorstore):
     retriever = vectorstore.as_retriever(search_type="similarity", search_k=3)
 
-# Set up compressor for contextual compressions
-    llm = OpenAI(model="gpt-4-turbo",temperature=0, max_tokens=1500,openai_api_key=openai_api_key)
+
+    # Set up compressor for contextual compressions
+    llm = OpenAI(temperature=0, max_tokens=1500,openai_api_key=openai_api_key)
     compressor = LLMChainExtractor.from_llm(llm)
 
-# Create a contextual compression retriever
-    compression_retriever = ContextualCompressionRetriever(
-        base_compressor=compressor,
-        base_retriever=retriever
-    
-    )
 
-# Prompt template
+    # Create a contextual compression retriever
+    compression_retriever = ContextualCompressionRetriever(base_compressor=compressor,base_retriever=retriever)
+
+
+    # Prompt template
     prompt_template = """
 You are an advanced **Contract Query Chatbot**, designed to provide precise and professional answers based on legal contract information provided in the context. Follow these guidelines to deliver the most accurate and well-presented response:
 
 1. **Use only the information from the provided context** to answer the query. Do not assume or reference external knowledge.
 2. **Clarify vague queries**: If the query lacks specificity, ask for clarification rather than assuming intent.
 3. If the query is unclear, **break it down logically** and clarify each part using the context, then provide a comprehensive answer.
-4. If the context does not contain enough information to address the query, state: _"The retrieved context does not contain sufficient information to answer the query."_ and mention which specific details are missing.
+4. If the context does not contain enough information to address the query, state: _"The retrieved context does not contain sufficient information to answer the query." - and mention which specific details are missing.
 5. For queries involving **multiple relevant sections**, summarize each section concisely and explain its relevance to the query.
 6. **Reference specific sections, clauses, or page numbers** within the context to support your response. If necessary, break down complex sections for clarity.
 7. Maintain a **neutral, professional tone**, avoiding speculation or interpretation of legal language unless explicitly stated in the context.
@@ -70,10 +72,7 @@ You are an advanced **Contract Query Chatbot**, designed to provide precise and 
 **Answer:**
 """
 
-
-
-
-# Create the QA chain with prompt, LLM, and retriever
+    # Create the QA chain with prompt, LLM, and retriever
     qa_prompt = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
     llm_chain = LLMChain(llm=llm, prompt=qa_prompt)
 
@@ -81,6 +80,7 @@ You are an advanced **Contract Query Chatbot**, designed to provide precise and 
     combine_documents_chain = StuffDocumentsChain(llm_chain=llm_chain, document_variable_name=document_variable_name)
     qa_chain = RetrievalQA(retriever=compression_retriever, combine_documents_chain=combine_documents_chain)
     return qa_chain
+
 
 # Querying function
 def query_system(query,qa_chain):
